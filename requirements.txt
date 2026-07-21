@@ -1,0 +1,7 @@
+tensorflow>=2.13
+opencv-python
+streamlit
+scikit-learn
+matplotlib
+seaborn
+numpy
