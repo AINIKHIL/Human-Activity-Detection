@@ -109,8 +109,16 @@ har_project/
 
 ## Setup
 
+For Streamlit deployment / inference only:
+
 ```bash
 pip install -r requirements.txt
+```
+
+For local training or retraining:
+
+```bash
+pip install -r requirements-train.txt
 ```
 
 Training a CNN+LSTM video model needs a GPU to be practical. If you don't
@@ -140,7 +148,8 @@ This will:
   `sample_predictions.png` (a few test videos with true vs. predicted labels)
 - Print a classification report with **Accuracy, Precision, Recall, F1
   Score** per class, and save `confusion_matrix.png`
-- Save `har_model.h5` and `class_names.txt` -- the app needs both of these
+- Save `har_model.h5` and `class_names.txt` -- then convert/export to `har_model.onnx`
+  for TensorFlow-free deployment in the Streamlit app
 
 ## Step 2: Run the app
 

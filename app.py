@@ -7,27 +7,31 @@ Run with:
     streamlit run app.py
 """
 
-import time
 import tempfile
-from collections import deque
 
 import numpy as np
+import onnxruntime as ort
 import streamlit as st
-from tensorflow.keras.models import load_model
 
-from utils import extract_frames, SEQUENCE_LENGTH, IMG_SIZE
+from utils import extract_frames
 
 st.set_page_config(page_title="Human Activity Recognition", layout="centered")
 
 # ---- Load model + class names once and cache them across reruns ----
 @st.cache_resource
 def load_har_model():
-    model = load_model("har_model.h5")
+    session = ort.InferenceSession("har_model.onnx", providers=["CPUExecutionProvider"])
     with open("class_names.txt") as f:
         class_names = [line.strip() for line in f.readlines()]
-    return model, class_names
+    return session, class_names
 
-model, class_names = load_har_model()
+session, class_names = load_har_model()
+
+
+def predict_activity(frames):
+    input_name = session.get_inputs()[0].name
+    inputs = np.expand_dims(frames, axis=0).astype(np.float32)
+    return session.run(None, {input_name: inputs})[0][0]
 
 # If your dataset's "fall" class is named something else, change this to match.
 FALL_CLASS_NAME = "Falling"
@@ -36,7 +40,7 @@ FALL_CONFIDENCE_THRESHOLD = 0.6
 st.title("🏃 Human Activity Recognition")
 st.write("Upload a video and the model will predict the activity being performed.")
 
-tab_upload, tab_webcam = st.tabs(["📁 Upload Video", "📷 Live Webcam"])
+tab_upload, tab_webcam = st.tabs(["📁 Upload Video", "📷 Webcam"])
 
 # ============================================================
 # TAB 1: Upload a video file
@@ -57,8 +61,7 @@ with tab_upload:
         if frames is None:
             st.error("Could not read this video. Try a different file.")
         else:
-            X = np.expand_dims(frames, axis=0)  # add the batch dimension the model expects
-            predictions = model.predict(X, verbose=0)[0]
+            predictions = predict_activity(frames)
 
             predicted_idx = np.argmax(predictions)
             predicted_class = class_names[predicted_idx]
@@ -78,51 +81,8 @@ with tab_upload:
 # ============================================================
 with tab_webcam:
     st.write(
-        "Grabs frames from your webcam into a rolling window and "
-        "re-predicts the activity roughly every couple of seconds. "
-        "Note: this reads the webcam attached to the machine running "
-        "`streamlit run app.py` -- see README.md for the note on browser-based "
-        "webcam access (needed if you deploy this to Streamlit Cloud)."
+        "This deployed app supports public video upload prediction. "
+        "Server-side webcam capture is disabled because Streamlit Community Cloud "
+        "cannot access a visitor's browser camera through OpenCV."
     )
-    run = st.checkbox("Start webcam")
-    frame_placeholder = st.empty()
-    result_placeholder = st.empty()
-    timeline_placeholder = st.empty()
-
-    if run:
-        import cv2
-        cap = cv2.VideoCapture(0)
-        frame_buffer = deque(maxlen=SEQUENCE_LENGTH)
-        timeline = []  # (time, activity) pairs -- the "activity timeline" bonus feature
-
-        while run:
-            success, frame = cap.read()
-            if not success:
-                st.warning("Could not access webcam.")
-                break
-
-            frame_placeholder.image(frame, channels="BGR")
-
-            small = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (IMG_SIZE, IMG_SIZE))
-            frame_buffer.append(small.astype(np.float32) / 255.0)
-
-            if len(frame_buffer) == SEQUENCE_LENGTH:
-                X = np.expand_dims(np.array(frame_buffer), axis=0)
-                predictions = model.predict(X, verbose=0)[0]
-                predicted_idx = np.argmax(predictions)
-                predicted_class = class_names[predicted_idx]
-                confidence = predictions[predicted_idx]
-
-                result_placeholder.subheader(
-                    f"Predicted Activity: {predicted_class} | Confidence Score: {confidence * 100:.1f}%"
-                )
-
-                if predicted_class == FALL_CLASS_NAME and confidence >= FALL_CONFIDENCE_THRESHOLD:
-                    result_placeholder.error("⚠️ Fall detected!")
-
-                timeline.append((time.strftime("%H:%M:%S"), predicted_class))
-                timeline_placeholder.table(timeline[-10:])  # show the last 10 predictions
-
-            time.sleep(0.1)
-
-        cap.release()
+    st.info("Use the Upload Video tab to test the deployed app from any device.")
